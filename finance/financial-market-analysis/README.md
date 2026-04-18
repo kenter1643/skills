@@ -17,6 +17,7 @@
 - `SKILL.md`：主技能说明
 - `references/prompt-template.md`：通用提示词与长模板
 - `references/thinking-summary.md`：方法论总结
+- `references/example-output.md`：示例输出
 - `templates/premarket.md`：盘前模板
 - `templates/intraday.md`：盘中模板
 - `templates/postmarket.md`：盘后复盘模板
