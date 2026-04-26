@@ -372,7 +372,35 @@ result = subprocess.run(
 - **Workaround:** Use macOS `launchd` instead of Hermes cron. Or run posting manually.
 - The cron context also requires `launchctl asuser <UID>` to access the GUI session — see "Running from cron" section.
 
-## DOM Selectors Reference
+---
+
+## Content Guidelines: Question Format (Engagement Rule)
+
+**Every post MUST end with a multiple-choice question (A/B/C/D)** to drive comment engagement. No open-ended questions — give readers specific options to pick from.
+
+### Structure
+
+```
+[文学风格正文——比喻/叙事/反差]
+
+A. [选项一——简短，带态度]
+B. [选项二——简短，带态度]
+C. [选项三——简短，带态度]
+D. [选项四——简短，带态度]
+```
+
+### Rules
+- **4 options only** (A/B/C/D). Never fewer, never more.
+- **Each option ≤ 15 Chinese characters** — concise enough to scan, punchy enough to vote.
+- **Option D should invite nuance** — "评论区见" / "看人" / "分情况" to acknowledge complexity.
+- **Literary body ≤ 200 chars** to leave room for the 4 options within X's 280-count limit.
+- **Write the body first**, then calculate remaining budget for options.
+
+### X count reminder
+- Chinese characters count as 2 against X's 280 limit
+- A/B/C/D markers + spaces ≈ 12-16 X-count
+- Each option letter + punctuation ≈ 4 X-count overhead
+- Plan body to leave ~120 X-count for the 4 options<｜end▁of▁thinking｜>
 
 | Element | Selector |
 |---------|----------|
