@@ -19,7 +19,9 @@ metadata:
 - 阅读帖子全文
 - 用 `in_reply_to` URL + 剪贴板粘贴法自动回复评论
 
-**已生产验证：** 2026-04-26，评论 @Stanleysobest 帖子，2/2 成功 ✅
+**已生产验证：** 
+- 2026-04-26，评论 @Stanleysobest 帖子，2/2 成功 ✅
+- 2026-04-26 21:05，Cron 自动轮询 8 个目标用户，产出 12 条评论 ✅（全流程：飞书读用户 → Chrome 扫帖子 → 去重 → 评论 → 飞书记录）
 
 ## 两种工作模式
 
@@ -429,6 +431,8 @@ def x_count(s):
 
 ```python
 import subprocess, json, time, re, sys, datetime
+from datetime import timezone, timedelta
+SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 BASE_TOKEN = "HasEbcrCPaXB8tsPQMzjN3FLpMb"
 
