@@ -593,7 +593,7 @@ def run_comment_round():
             print(f"  🆕 新帖子: {len(new_posts)} 条")
         
         # 对每条新帖子评论
-        for post in new_posts[:2]:  # 每次最多评论2条/用户
+        for post in new_posts[:1]:  # 每次最多评论1条/用户（每小时1条）
             post_text = post.get('text', '')
             post_id = post.get('postId', '')
             post_url = post.get('url', '')
