@@ -422,7 +422,7 @@ def x_count(s):
 | 帖子URL | text | 完整帖子链接 |
 | 帖子内容摘要 | text | 帖子前100字 |
 | 评论内容 | text | 回复内容 |
-| 评论时间 | datetime | 评论时间 |
+| 评论时间 | datetime | 评论时间（格式 `yyyy/MM/dd HH:mm`，视图已按此字段倒序排列） |
 | 状态 | select | 已评论 / 已跳过 |
 
 ### 完整轮询脚本
