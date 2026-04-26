@@ -626,7 +626,7 @@ def run_comment_round():
                 "帖子URL": post_url,
                 "帖子内容摘要": post_text[:100],
                 "评论内容": comment_text,
-                "评论时间": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "评论时间": datetime.datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M:%S"),
                 "状态": "已评论" if success else "已跳过"
             }
             lark_write(RECORDS_TABLE, record)
@@ -634,7 +634,7 @@ def run_comment_round():
             time.sleep(8)  # 避免频率限制
         
         # 更新目标用户的最后扫描时间
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M:%S")
         lark_write(USERS_TABLE, {"最后扫描时间": now}, record_id=user_rid)
         
         time.sleep(3)  # 两个用户之间间隔
