@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Skill(update-config)",
+      "Bash(cat *)",
+      "Bash(python3 *)",
+      "Bash(echo \"Exit: $?\")"
+    ]
+  }
+}
