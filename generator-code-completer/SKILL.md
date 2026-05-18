@@ -1,8 +1,8 @@
 ---
 name: generator-code-completer
 description: >-
-  当用户需要补充/调整 MyBatisPlusGeneratorV2 生成的代码，或用户提供接口文档 markdown 文件和列表页面截图来对齐生成代码时，使用此技能。
-  本技能处理：补充 HeadServiceImpl 中缺失的方法，根据接口文档和截图调整 getBillList/getBillDetail 的 SQL 和 VO 字段，
+  当用户需要补充/调整 MyBatisPlusGeneratorV2 生成的代码，或用户提供接口文档 markdown 文件来对齐生成代码时，使用此技能。
+  本技能处理：补充 HeadServiceImpl 中缺失的方法，根据接口文档（含排序号列）调整 getBillList/getBillDetail 的 SQL 和 VO 字段，
   从 headSql.sql 中添加枚举值到 BillTypeEnum/SysSerialNumEnum/CboFileEnum，
   为 Date/Integer/BigDecimal 类型创建带 @ExcelProperty 注解的 Str 字段，
   以及用 saveOperateFile/getOperateFile 方法补全 OperateFileService。
@@ -37,15 +37,7 @@ description: >-
 ### Step 0: 获取输入文件
 
 1. 如果用户已在消息中提供了接口文档 .md 文件路径，直接使用；否则**提示用户输入接口文档 .md 文件的路径**
-2. **提示用户输入列表界面截图路径**（PNG/JPG 格式），例如："请提供列表界面的截图路径"
-3. 使用 Read 工具读取：
-   - 接口文档 .md 内容
-   - **列表界面截图**（Claude 多模态能力识别）— 从截图中提取：
-     - **列头文字** → 用作 `@ExcelProperty(value = "...")` 的值
-     - **列顺序**（从左到右）→ 用作 `@ExcelProperty(index = N)` 的编号
-     - **可见列列表** → 决定 VO 中需要包含哪些字段
-4. 如果用户无法提供截图，则仅以接口文档为准。此时列顺序按接口文档出参表的出现顺序推断，列头文字取接口文档出参表的"备注"列值。
-5. **注意**：如果截图文件无法被 Read 工具识别（显示 "Unsupported Image"），则视为无法提供截图，同样以接口文档为准。
+2. 使用 Read 工具读取接口文档 .md 内容
 
 ---
 
@@ -65,6 +57,7 @@ description: >-
 - URL 的最后一段作为接口名（如 `list`, `detail`, `save`, `yesOrNoLabel`）
 - `#### 入参说明` 下的表格：字段名、类型、备注
 - `#### 出参说明` 下的表格：字段名、类型、备注
+- **对于"单据列表"区块的出参表**，额外解析 **排序号** 列（第4列），用于后续 `@ExcelProperty(index = N)` 的生成
 
 注意：
 - 跳过 `#### 出参示例` 代码块（内容通常为空）
@@ -181,21 +174,20 @@ public AjaxResult yesOrNoLabel() {
 
 ### Step 4: 调整 getBillList
 
-根据**列表界面截图**（优先）和接口文档中 "单据列表" 区块的出参进行调整。涉及三个文件的修改。
-
-**优先级规则**：列表截图 > 接口文档出参表
+根据接口文档中 "单据列表" 区块的出参表（含排序号列）进行调整。涉及三个文件的修改。
 
 #### 4a. 确定 ListVO 需要的字段
 
-**字段来源（按优先级）**：
-1. **列表截图识别的可见列** → 作为 VO 字段的最终标准
-2. **接口文档出参表** → 作为补充（截图无法识别时使用）
-3. 两者取**并集**
+**字段来源**：接口文档"单据列表"出参表。
+
+1. 遍历出参表中的每个字段
+2. **有排序号**的字段 → 需要 `@ExcelProperty` 导出，保留对应的原始字段和 Str 字段
+3. **无排序号**的字段 → 不加 `@ExcelProperty`，保留原始字段声明供 SQL 数据映射
 
 确定字段后，判断每个字段的类型：
 - 字段在 Head 实体或 Detail 实体中 → 记录其 Java 类型（Date / Integer / BigDecimal / String）
 - String 类型 → 直接作为导出字段
-- **Date / Integer / BigDecimal 类型 → 必须创建对应的 `*Str` 字段**（见 4b）
+- **Date / Integer / BigDecimal 类型 → 必须创建对应的 `*Str` 字段**（见 4c）
 
 **4a-补充：检查 BaseListVO 基类字段（避免重复声明）**
 
@@ -222,7 +214,7 @@ public AjaxResult yesOrNoLabel() {
    - 字段在 Head 实体中 → 来源 `h.<column> AS <fieldName>`
    - 字段在 Detail 实体中 → 来源 `d.<column> AS <fieldName>`
 3. 必须保留的辅助字段：`isPromoter` 计算列、各 Integer/Date/BigDecimal 原始字段（用于其 Str getter 格式化）
-4. 如果截图/文档中的字段在实体中找不到对应列，在 VO 中标记 `// todo: 确认数据来源`
+4. 如果文档中的字段在实体中找不到对应列，在 VO 中标记 `// todo: 确认数据来源`
 
 #### 4c. 调整 ListVO 字段和 @ExcelProperty 注解
 
@@ -230,9 +222,24 @@ public AjaxResult yesOrNoLabel() {
 
 **核心原则**：所有用于 Excel 导出的 `@ExcelProperty` 注解**全部放在 `*Str` 字段上**，原始 Date/Integer/BigDecimal 字段**不加 `@ExcelProperty`**，仅用于 SQL 数据映射。
 
+**排序号来源**：从接口文档"单据列表"出参表的 **排序号** 列获取。该列只有列表出参表才有（第4列），详情和其他接口的出参表没有此列。
+
+**排序号重映射规则（98/99/100 固定末尾列处理）**：
+
+1. 从出参表中提取所有排序号，分为两组：
+   - **自定义排序号**：< 98 的数值（如 1, 2, 3, ..., 10）
+   - **固定末尾列**：98, 99, 100（固定最后3列）
+2. 计算 `maxCustom` = 自定义排序号中的最大值（如 10）
+3. 映射到 `@ExcelProperty(index)`：
+   - 排序号 < 98 → `index = 排序号`（直接使用）
+   - 排序号 = 98 → `index = maxCustom + 1`
+   - 排序号 = 99 → `index = maxCustom + 2`
+   - 排序号 = 100 → `index = maxCustom + 3`
+4. 排序号为空的字段 → **不加 `@ExcelProperty`**
+
 **处理流程**：
-1. 根据截图识别的**列头文字**设置 `@ExcelProperty(value = "列头文字")`
-2. 根据截图识别的**列顺序**（从左到右从 1 开始）设置 `@ExcelProperty(index = N)`
+1. 根据接口文档出参表的**备注**列设置 `@ExcelProperty(value = "备注内容")`
+2. 根据上述重映射规则计算 `@ExcelProperty(index = N)`
 3. 对于长文本列（编号、名称、金额等）添加 `@ColumnWidth(21)`，普通列使用类级别 `@ColumnWidth(14)`
 4. 根据字段类型生成对应的原始字段 + Str 字段 + getter（见下方规则表）
 
