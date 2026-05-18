@@ -3,17 +3,17 @@
 
 skills存放目录如下所示：
 
-![image-20260515173956166](C:\Users\heyue\AppData\Roaming\Typora\typora-user-images\image-20260515173956166.png)
+![image-20260515173956166](./images/image-20260515173956166.png)
 
 #### 一、在项目下开启一个终端，并输入claude启动Claude Code
 
-![image-20260515174318179](C:\Users\heyue\AppData\Roaming\Typora\typora-user-images\image-20260515174318179.png)
+![image-20260515174318179](./images/image-20260515174318179.png)
 
 #### 二、两种方式调用skills：
 
 ##### 1、直接输入/，选择/front-code-generator，根据提示粘贴文档路径
 
-![image-20260518101633497](C:\Users\heyue\AppData\Roaming\Typora\typora-user-images\image-20260518101633497.png)
+![image-20260518101633497](./images/image-20260518101633497.png)
 
 
 
