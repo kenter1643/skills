@@ -26,10 +26,14 @@
 | 是否枚举 | 决定是否生成下拉接口 |
 | 枚举内容 | 追加到字段备注 |
 
-## 使用
+## 使用方式
 
+### 方式一：通过 Claude Code Skill（推荐）
+    在 Claude Code 中直接调用该 skill，它会引导你输入文件路径并自动生成。例：生成接口文档
+
+### 方式二：
 ```bash
-python main.py "<sql文件>" "<excel文件>" --output "<输出目录>"
+python main.py "<sql_file>" "<excel_file>" --output "<skill_dir>/output"
 ```
 
 输出文件：`output/业务名称.md`
