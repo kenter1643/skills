@@ -1,54 +1,63 @@
 ---
 name: front-code-generator
-description: 根据 excel-parser 解析的 JSON 和接口文档，自动生成列表页、录入页、审批详情页等前端代码。适用于已有业务模块参考代码的场景。
+description: 根据 Excel 需求文档和接口文档，自动生成列表页、录入页、审批详情页等前端代码。自动调用 excel-parser 解析 Excel。适用于已有业务模块参考代码的场景。
 ---
 
 # 前端代码生成器
 
-根据 Excel 需求解析结果 + 接口文档 + 参考代码模式，生成标准化的前端业务页面代码。
+根据 Excel 需求文档 + 接口文档 + 参考代码模式，生成标准化的前端业务页面代码。
+
+**Excel 会自动调用 excel-parser 解析，无需单独执行 `/excel-parser`。**
+
+## 交互流程
+
+当用户调用此 skill 时，**必须先询问用户以下两个文件路径**，不要直接执行命令：
+
+1. **Excel 需求文档路径**（.xlsx 文件，须包含「字段说明」sheet）
+2. **接口文档路径**（.md 文件，包含 list/detail/save/delete/audit 等接口定义）
+
+用户提供路径后，确认文件存在，再执行生成命令。
 
 ## 执行方式
 
 ```bash
-# 在项目根目录执行，skill 内部会切换到对应目录
+# 推荐：直接传 Excel（自动调用 excel-parser 解析）
+python .claude/skills/front-code-generator/generate.py \
+  --excel "<Excel需求文档.xlsx>" \
+  --api "<接口文档md>"
+
+# 或者：传已解析的 JSON
 python .claude/skills/front-code-generator/generate.py \
   --json "<excel-parser输出的JSON>" \
-  --api "<接口文档md>" \
-  --output "<输出目录>"
+  --api "<接口文档md>"
 ```
 
 参数说明：
-- `--json` / `-j`：excel-parser 输出的 JSON 文件路径
-- `--api` / `-a`：接口文档 Markdown 文件路径
+- `--excel` / `-e`：Excel 需求文档路径（推荐，自动调用 excel-parser 解析）
+- `--json` / `-j`：excel-parser 输出的 JSON 文件路径（手动解析时使用）
+- `--api` / `-a`：接口文档 Markdown 文件路径（必填）
 - `--output` / `-o`：代码输出根目录（可选，默认输出到项目 `src/views`）
-- `--ref` / `-r`：参考模块路径（可选，默认使用内置模板）
+- `--business-name` / `-b`：业务名称（可选，默认从 Excel 文件名提取）
 
-### 动态参数提取
+## 工作流程
 
-以下参数从接口文档中自动提取，不需要手动指定：
-
-| 参数 | 提取来源 | 示例 |
-|------|---------|------|
-| `{code}` | 流程 Key `{col}Bill{code}Approval` | `2808` |
-| `{col}` | 流程 Key 前缀 或 API 路径第一段 | `cm` |
-
-提取规则：
-1. 从接口文档中匹配流程 Key 模式 `xxxBillNNNNApproval`
-2. `{code}` = 提取到的数字部分（如 `2808`）
-3. `{col}` = 数字前的部分去掉 `Bill`（如 `cmBill2808Approval` → `cm`）
-4. API 路径前缀与 `{col}` 一致（如 `/cm/bill/2808/list`）
+1. 如果传入 `--excel`，自动调用 excel-parser 的 `parse_excel()` 解析 Excel，生成结构化 JSON
+2. 从接口文档中提取流程 Key、API 路径、入参/出参映射
+3. 建立 Excel 字段中文名 ↔ API 参数名的映射表
+4. 根据映射 + 模板生成列表页、录入页、审批详情页代码
 
 ## 前提条件
 
-1. 已通过 excel-parser 生成结构化的 `{业务名称}.json`
-2. 已有接口文档（包含 list/detail/save/delete/audit 等接口定义）
-3. 项目使用 `zy-order-form` 和 `columnsV2` 框架
+1. Excel 文件必须包含「字段说明」sheet（名称含"字段说明"）
+2. 接口文档需包含 list/detail/save/delete/audit 等接口定义
+3. 接口文档中需有流程 Key（格式 `{col}Bill{code}Approval`）以提取路径参数
+4. 项目使用 `zy-order-form` 和 `columnsV2` 框架
 
 ## 输入来源
 
-### 1. Excel 解析 JSON
+### 1. Excel 需求文档（自动解析）
 
-包含以下关键数据：
+直接传入 `.xlsx` 文件，内部调用 excel-parser 提取以下数据：
 
 | 字段 | 用途 |
 |------|------|

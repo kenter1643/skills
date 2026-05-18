@@ -67,18 +67,20 @@ def expand_related_field_names(names):
 # ---------------------------------------------------------------------------
 
 DISPLAY_TYPE_MAP = [
+    # 注意：更长/更具体的匹配项必须放在前面，避免被子串误匹配
+    ('多行文本框', 'textarea'),
+    ('多行文本', 'textarea'),
     ('下拉', 'select'),
-    ('文本', 'text'),
-    ('日期', 'date'),
-    ('数字', 'number'),
     ('复选框', 'checkbox'),
     ('单选框', 'radio'),
-    ('多行文本', 'textarea'),
     ('附件', 'file'),
     ('按钮', 'button'),
     ('抽屉', 'drawer'),
     ('弹窗', 'dialog'),
     ('导入', 'import'),
+    ('日期', 'date'),
+    ('数字', 'number'),
+    ('文本', 'text'),
 ]
 
 
@@ -346,17 +348,16 @@ def _parse_drawer_fields(text):
                     items.append(item)
         return items
 
-    # 模糊查询（XXX、XXX）
-    m = re.search(r'模糊查询[（(]([^)）]+)[)）]', text)
+    # 模糊查询：XXX、XXX
+    m = re.search(r'模糊查询[：:](.+?)(?:[；;]|$)', text)
     if m:
         result['fuzzy_search'] = extract_fields(m.group(1))
-        # 模糊查询字段也是高级查询字段的子集
         for f in result['fuzzy_search']:
             if f not in result['advanced_search']:
                 result['advanced_search'].append(f)
 
-    # 高级查询（XXX、XXX）
-    m = re.search(r'高级查询[（(]([^)）]+)[)）]', text)
+    # 高级查询：XXX、XXX
+    m = re.search(r'高级查询[：:](.+?)(?:[；;]|$)', text)
     if m:
         for f in extract_fields(m.group(1)):
             if f not in result['advanced_search']:

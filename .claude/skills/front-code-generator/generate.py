@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 前端代码生成器
-根据 excel-parser JSON + 接口文档 → 生成列表页/录入页/审批详情页
+根据 Excel 需求文档 + 接口文档 → 生成列表页/录入页/审批详情页
 
 用法:
+    # 方式1：直接传 Excel（推荐，自动解析）
+    python generate.py --excel "<excel路径>" --api "<接口文档md>" [--output "<输出目录>"]
+
+    # 方式2：传已解析的 JSON
     python generate.py --json "<json路径>" --api "<接口文档md>" [--output "<输出目录>"]
 """
 
@@ -33,11 +37,16 @@ from config import (
 # ---------------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='前端代码生成器')
-    parser.add_argument('--json', '-j', required=True, help='excel-parser 输出的 JSON 文件路径')
+    parser = argparse.ArgumentParser(description='前端代码生成器（支持直接传 Excel 自动解析）')
+    parser.add_argument('--json', '-j', default=None, help='excel-parser 输出的 JSON 文件路径')
+    parser.add_argument('--excel', '-e', default=None, help='Excel 需求文档路径（自动调用 excel-parser 解析）')
     parser.add_argument('--api', '-a', required=True, help='接口文档 Markdown 文件路径')
     parser.add_argument('--output', '-o', default=None, help='代码输出根目录（默认项目 src/views）')
-    return parser.parse_args()
+    parser.add_argument('--business-name', '-b', default=None, help='业务名称（默认从 Excel 文件名提取）')
+    args = parser.parse_args()
+    if not args.json and not args.excel:
+        parser.error('必须提供 --json 或 --excel 中的一个')
+    return args
 
 
 # ---------------------------------------------------------------------------
@@ -777,7 +786,7 @@ class CodeGenerator:
         # 明细表
         if details:
             lines.append(f'{B2}<zy-order-form-group title="明细" type="table" base="infoList" :useAgGrid="true">')
-            lines.append(f'{B3}<template #header="{{ model, ref }}">')
+            lines.append(f'{B3}<template #header>')
 
             # 遍历 detail_buttons 渲染按钮
             for bf in detail_buttons:
@@ -817,7 +826,7 @@ class CodeGenerator:
 
         # plugins（仅 import-list）
         if has_import:
-            lines.append(f'{B2}<template #plugins="{{ model }}">')
+            lines.append(f'{B2}<template #plugins')
             lines.append(f'{B3}<import-list v-bind="importConfig" ref="importList" '
                          f'@importResult="importResult"></import-list>')
             lines.append(f'{B2}</template>')
@@ -1350,9 +1359,39 @@ class CodeGenerator:
 def main():
     args = parse_args()
 
-    # 读取 JSON
-    with open(args.json, 'r', encoding='utf-8') as f:
-        json_data = json.load(f)
+    # ── 如果传了 Excel，先调用 excel-parser 解析 ──
+    if args.excel:
+        print(f"[excel-parser] 开始解析 Excel: {args.excel}")
+        # 添加 excel-parser 目录到 sys.path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        excel_parser_dir = os.path.join(os.path.dirname(script_dir), 'excel-parser')
+        if excel_parser_dir not in sys.path:
+            sys.path.insert(0, excel_parser_dir)
+        from parse_excel import parse_excel as parse_excel_file
+
+        business_name = args.business_name
+        if not business_name:
+            # 从 Excel 文件名 + API 文档流程 Key 生成业务名称
+            code = None
+            with open(args.api, 'r', encoding='utf-8') as f:
+                content = f.read()
+            m = re.search(r'流程Key[：:]\s*(\w+)', content)
+            if not m:
+                m = re.search(r'(\w*Bill\d+Approval)', content)
+            if m:
+                flow_key = m.group(1)
+                m2 = re.match(r'(\w+)Bill(\d+)Approval', flow_key)
+                if m2:
+                    code = m2.group(2)
+            excel_name = os.path.splitext(os.path.basename(args.excel))[0]
+            business_name = f"{excel_name}" if not code else excel_name
+
+        json_data = parse_excel_file(args.excel, business_name)
+        print(f"[excel-parser] 解析完成，字段: {len(json_data.get('field_info', {}))} 个")
+    else:
+        # 读取 JSON
+        with open(args.json, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
 
     # 解析接口文档
     api_data = parse_api_doc(args.api)
