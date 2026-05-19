@@ -581,22 +581,18 @@ class CodeGenerator:
     def _gen_index_vue(self):
         lines = ['<template>', '  <columns-template>']
 
-        # ColumnsTemplate 内置的字段（含 prop 和 filter 行为），不需要重复定义
-        # prop=显示用的数据字段，filter-prop=查询用的参数名
         builtin = BUILTIN_LIST_COLUMNS
 
         def _filter_prop(fname, prop, info):
-            """根据字段属性返回正确的 filter-prop"""
             ft = info.get('field_type', '')
             dt = info.get('display_type', '')
             if '日期' in ft:
-                return 'bill'  # 日期用简化的 range 参数
+                return 'bill'
             if info.get('is_enum') or dt == 'select':
-                return prop.replace('Str', '')  # 枚举：prop 加 Str，filter-prop 不加
+                return prop.replace('Str', '')
             return prop
 
         def _display_prop(fname, prop, info):
-            """返回列表显示用的 prop（状态/金额用 Str 后缀）"""
             ft = info.get('field_type', '')
             if '金额' in fname or '元' in fname or '税率' in fname:
                 return prop + 'Str'
@@ -606,26 +602,14 @@ class CodeGenerator:
                 return prop + 'Str'
             return prop
 
-        fuzzy_set = set(self.json.get('fuzzy_search', []))
-        advanced_set = set(self.json.get('advanced_search', []))
-
-        # 列表显示列（按 list_order_fields 顺序，跳过内置字段，filter 直接加在列上）
-        for fname in self.json.get('list_order_fields', []):
-            if fname in builtin:
-                continue
+        def _build_column(fname):
+            """构建单个列的 HTML 行列表"""
             prop = self.mapping.get(fname, self._guess_prop(fname))
             info = get_field_info(self.json, fname)
             dprop = _display_prop(fname, prop, info)
             width = self._estimate_width(fname, info)
             is_drawer = info.get('display_type') == 'drawer'
 
-            # filter 规则（对齐 columnsV2.vue）：
-            #   drawer/可跳转 → filter（如 项目编号）
-            #   text + 模糊查询 → filter filter-nimble（如 项目名称）
-            #   text + 仅高级查询 → filter（如 制单人）
-            #   日期 → filter filter-type="daterange"
-            #   枚举/select → filter filter-type="select"
-            #   金额 → 不加 filter
             filter_attrs = ''
             ft = info.get('field_type', '')
             dt = info.get('display_type', '')
@@ -639,30 +623,66 @@ class CodeGenerator:
                 fp = _filter_prop(fname, prop, info) or prop
                 filter_attrs = f' filter filter-type="select" filter-prop="{fp}" filter-api="TODO:{fname}Enum"'
             elif is_drawer:
-                # 可跳转 drawer 列加 filter（对齐 项目编号 的 filter 模式）
                 filter_attrs = ' filter'
             elif in_fuzzy:
-                # 模糊查询列的文本字段 → filter filter-nimble（对齐 项目名称 模式）
                 filter_attrs = ' filter filter-nimble'
             elif in_advanced:
-                # 仅高级查询列的文本字段 → filter（对齐 制单人 模式）
                 filter_attrs = ' filter'
 
+            col_lines = []
             if is_drawer:
-                # 关联ID：contractCode → contractId, paperContractNumber → contractId
                 id_key = self._guess_id_key(fname, prop)
                 nav_code = self._guess_nav_code(fname)
-                lines.append(f'    <zy-ag-table-column label="{fname}" prop="{prop}" width="{width}"{filter_attrs}>')
-                lines.append(f'      <template slot-scope="{{ data }}">')
-                lines.append(f'        <el-button v-if="data.{prop}" type="text" '
-                             f'@click="$goDetailView(data, \'{id_key}\', \'{nav_code}\', true)">')
-                lines.append(f'          {{{{ data.{prop} }}}}')
-                lines.append(f'        </el-button>')
-                lines.append(f'        <span v-else>——</span>')
-                lines.append(f'      </template>')
-                lines.append(f'    </zy-ag-table-column>')
+                col_lines.append(f'    <zy-ag-table-column label="{fname}" prop="{prop}" width="{width}"{filter_attrs}>')
+                col_lines.append(f'      <template slot-scope="{{ data }}">')
+                col_lines.append(f'        <el-button v-if="data.{prop}" type="text" '
+                                 f'@click="$goDetailView(data, \'{id_key}\', \'{nav_code}\', true)">')
+                col_lines.append(f'          {{{{ data.{prop} }}}}')
+                col_lines.append(f'        </el-button>')
+                col_lines.append(f'        <span v-else>——</span>')
+                col_lines.append(f'      </template>')
+                col_lines.append(f'    </zy-ag-table-column>')
             else:
-                lines.append(f'    <zy-ag-table-column label="{fname}" prop="{dprop}" width="{width}"{filter_attrs}></zy-ag-table-column>')
+                col_lines.append(f'    <zy-ag-table-column label="{fname}" prop="{dprop}" width="{width}"{filter_attrs}></zy-ag-table-column>')
+            return col_lines
+
+        fuzzy_set = set(self.json.get('fuzzy_search', []))
+        advanced_set = set(self.json.get('advanced_search', []))
+
+        list_fields = self.json.get('list_order_fields', [])
+
+        # 找出 auto slot 区域的边界（单据状态之后，承办项目/部门之前）
+        auto_start = None
+        auto_end = None
+        for i, fname in enumerate(list_fields):
+            if fname == '单据状态':
+                auto_start = i
+            elif fname == '承办项目/部门':
+                auto_end = i
+
+        # 收集各 slot 区域的列
+        auto_columns = []    # <template slot="auto"> 包裹
+        default_columns = []  # 默认 slot（无需包裹）
+
+        for i, fname in enumerate(list_fields):
+            if fname in builtin:
+                continue
+            col_lines = _build_column(fname)
+            in_auto_zone = (auto_start is not None and auto_end is not None
+                            and auto_start < i < auto_end)
+            if in_auto_zone:
+                auto_columns.extend(col_lines)
+            else:
+                default_columns.extend(col_lines)
+
+        # 输出 auto slot（包裹在 <template slot="auto"> 中）
+        if auto_columns:
+            lines.append('    <template slot="auto">')
+            lines.extend(auto_columns)
+            lines.append('    </template>')
+
+        # 输出默认 slot 的列
+        lines.extend(default_columns)
 
         lines.append('  </columns-template>')
         lines.append('</template>')
@@ -751,7 +771,7 @@ class CodeGenerator:
         if needs_wrapper:
             lines.append(f'{W1}<div>')
 
-        lines.append(f'{B1}<zy-order-form @created="created" :page-name="title" '
+        lines.append(f'{B1}<zy-order-form :page-name="title" '
                      f':templates="[\'baseInfo\']" @beforeLayout="beforeLayout" :watch="watch">')
 
         # 主表分组（跳过组件内置的模板组）
@@ -958,18 +978,10 @@ class CodeGenerator:
             lines.append(f'    }}')
         lines.append(f'  }},')
         lines.append(f'  methods: {{')
-        lines.append(f'    created(model) {{')
-        lines.append(f'      return new Promise(resolve => {{')
-        lines.append(f'        resolve(true)')
-        lines.append(f'      }})')
-        lines.append(f'    }},')
         lines.append(f'    beforeLayout(model) {{')
         lines.append(f'      return new Promise(async resolve => {{')
-        lines.append(f'        if (!this.$route.query.id) model.billDate = new Date()')
         lines.append(f'        resolve(true)')
         lines.append(f'      }})')
-        lines.append(f'    }},')
-        lines.append(f'    refresh() {{')
         lines.append(f'    }},')
         if has_import:
             lines.append(f'    importResult(val) {{')
@@ -978,11 +990,9 @@ class CodeGenerator:
             lines.append(f'      const list = model.infoList || []')
             lines.append(f'      const successList = val?.successList || []')
             lines.append(f'      model.infoList = [...list, ...successList]')
-            lines.append(f'      this.refresh()')
             lines.append(f'    }},')
         lines.append(f'    removeRow(index, ref) {{')
         lines.append(f'      ref.removeRow(index)')
-        lines.append(f'      this.refresh()')
         lines.append(f'    }},')
         if has_import:
             lines.append(f'    showImport() {{')
@@ -1000,7 +1010,6 @@ class CodeGenerator:
             lines.append(f'    on{safe}Select(selection) {{')
             lines.append(f'      const model = FormController.current?.model || {{}}')
             lines.append(f'      model.infoList = [...(model.infoList || []), ...selection]')
-            lines.append(f'      this.refresh()')
             lines.append(f'    }},')
         for fname, info in self.json.get('field_info', {}).items():
             if info.get('is_enum'):
@@ -1087,7 +1096,7 @@ class CodeGenerator:
 
         return '\n'.join(lines) + '\n'
 
-    # ---- 审批详情 js/list.js ----
+    # ---- 审批详情 js/ellipsis.js ----
 
     def _gen_approval_list_js(self):
         lines = ['module.exports = [']
@@ -1099,7 +1108,7 @@ class CodeGenerator:
                 continue
             fields = group.get('fields', [])
 
-            # 每行放 2-3 个字段
+            # 每行放 4 个字段
             rows = []
             row = []
             for fname in fields:
@@ -1113,12 +1122,22 @@ class CodeGenerator:
                     cell['idKey'] = self._guess_id_key(fname, prop)
                     cell['code'] = self._guess_nav_code(fname)
 
+                # 多行文本 → 独占一行
+                dt = info.get('display_type', '')
+                if dt in ('textarea', '多行文本'):
+                    if row:
+                        rows.append(row)
+                    cell['colSpan'] = 24
+                    rows.append([cell])
+                    row = []
+                    continue
+
                 # 附件
                 if fname == '附件':
                     cell['type'] = 'files'
                     cell['value'] = 'fileList'
                     row.append(cell)
-                    if len(row) >= 3:
+                    if len(row) >= 4:
                         rows.append(row)
                         row = []
                     continue
@@ -1133,7 +1152,7 @@ class CodeGenerator:
                     cell['value'] = prop + 'Str'
 
                 row.append(cell)
-                if len(row) >= 3:
+                if len(row) >= 4:
                     rows.append(row)
                     row = []
             if row:

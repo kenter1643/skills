@@ -371,6 +371,21 @@ def _parse_drawer_fields(text):
     return result
 
 
+# 分组内的字段排序规则（按此顺序排列，未列出的字段按原始顺序排在最后）
+GROUP_FIELD_ORDER = {
+    '基础信息': ['承办项目/部门', '制单时间', '制单人'],
+}
+
+
+def _sort_group_fields(title, fields):
+    """按 GROUP_FIELD_ORDER 规则对分组内字段排序"""
+    order = GROUP_FIELD_ORDER.get(title, [])
+    if not order:
+        return fields
+    priority = {name: i for i, name in enumerate(order)}
+    return sorted(fields, key=lambda f: priority.get(f, len(order)))
+
+
 def build_input_style(fields, field_order):
     """根据字段说明 sheet 的分组信息构建 input_style"""
     # 填充合并单元格导致的空分组（向下填充）
@@ -421,7 +436,7 @@ def build_input_style(fields, field_order):
                     detail_seen.add(f)
                     details.append(f)
         elif title:
-            main_groups.append({'title': title, 'fields': group_fields})
+            main_groups.append({'title': title, 'fields': _sort_group_fields(title, group_fields)})
         else:
             # 无分组字段归入默认组
             main_groups.append({'title': '', 'fields': group_fields})
@@ -549,6 +564,72 @@ def main():
         json.dump(data, f, indent=indent, ensure_ascii=False)
 
     print(f"[输出] JSON 已保存至: {os.path.abspath(output_path)}")
+
+    # 输出字段摘要文本文件
+    summary_path = os.path.join(args.output, f"{business_name}_summary.txt")
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        f.write(f"业务名称: {business_name}\n")
+        f.write(f"来源文件: {args.excel_file}\n")
+        f.write(f"字段说明 sheet: {data['field_description_sheet']}\n")
+        f.write(f"\n--- 模糊查询字段 ({len(data['fuzzy_search'])} 个) ---\n")
+        for name in data['fuzzy_search']:
+            f.write(f"  {name}\n")
+        f.write(f"\n--- 高级查询字段 ({len(data['advanced_search'])} 个) ---\n")
+        for name in data['advanced_search']:
+            f.write(f"  {name}\n")
+        f.write(f"\n--- 列表字段 ({len(data['list_order_fields'])} 个) ---\n")
+        for name in data['list_order_fields']:
+            f.write(f"  {name}\n")
+        f.write(f"\n--- 主表字段 ({len(data.get('main_fields', []))} 个) ---\n")
+        for name in data.get('main_fields', []):
+            f.write(f"  {name}\n")
+        f.write(f"\n--- 明细表字段 ({len(data.get('detail_fields', []))} 个) ---\n")
+        for name in data.get('detail_fields', []):
+            f.write(f"  {name}\n")
+        f.write(f"\n--- 字段说明详情 ({len(data['field_info'])} 个) ---\n")
+        for name, info in data['field_info'].items():
+            parts = []
+            if info.get('group'):
+                parts.append(f"分组={info['group']}")
+            parts.append(f"必填={info['is_required']}")
+            parts.append(f"枚举={info['is_enum']}")
+            if info.get('enum_values'):
+                parts.append(f"枚举值={info['enum_values']}")
+            if info.get('field_type'):
+                parts.append(f"类型={info['field_type']}")
+            if info.get('display_type'):
+                parts.append(f"展现={info['display_type']}")
+            if info.get('is_list_field'):
+                parts.append(f"列表字段(顺{info.get('list_order',0)})")
+            if info.get('is_fuzzy_search'):
+                parts.append(f"模糊查询")
+            if info.get('is_advanced_search'):
+                parts.append(f"高级查询")
+            if info.get('is_editable'):
+                parts.append(f"可编辑")
+            f.write(f"  {name}: {', '.join(parts)}\n")
+            if info.get('data_generation'):
+                f.write(f"    数据生成: {info['data_generation'][:80]}\n")
+            if info.get('data_check'):
+                f.write(f"    数据检查: {info['data_check'][:80]}\n")
+            if info.get('field_requirement'):
+                f.write(f"    字段要求: {info['field_requirement'][:80]}\n")
+        f.write(f"\n--- 主信息区（{len(data['input_style']['main'])} 个分组）---\n")
+        for group in data['input_style']['main']:
+            title = group['title'] or '(未分组)'
+            f.write(f"  [{title}]\n")
+            for name in group['fields']:
+                f.write(f"    {name}\n")
+        f.write(f"\n--- 明细区 ({len(data['input_style']['details'])} 个) ---\n")
+        for name in data['input_style']['details']:
+            f.write(f"  {name}\n")
+        for dr in data['input_style'].get('drawers', []):
+            f.write(f"\n--- 抽屉: {dr['title']} ---\n")
+            f.write(f"  模糊查询: {dr['fuzzy_search']}\n")
+            f.write(f"  高级查询: {dr['advanced_search']}\n")
+            f.write(f"  列表字段: {dr['list_fields']}\n")
+
+    print(f"[输出] 摘要已保存至: {os.path.abspath(summary_path)}")
 
 
 if __name__ == '__main__':

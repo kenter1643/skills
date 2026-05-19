@@ -30,6 +30,7 @@ python parse_excel.py "<excel_file>" [--output "<output_dir>"]
 
 解析完成后输出到 `output/` 目录：
 - `<业务名称>.json`：完整的结构化 JSON 数据
+- `<业务名称>_summary.txt`：字段摘要文本文件
 
 ## JSON 输出结构
 
