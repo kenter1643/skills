@@ -20,6 +20,8 @@ description: 根据 Excel 需求文档和接口文档，自动生成列表页、
 
 ## 执行方式
 
+执行过程中不要随意修改front-code-generator下的文件
+
 ```bash
 # 推荐：直接传 Excel（自动调用 excel-parser 解析）
 python .claude/skills/front-code-generator/generate.py \
@@ -385,7 +387,7 @@ export default {
 | 单明细表 | `type="table" base="infoList"` |
 | 多标签明细表 | `type="tableTabs"` 包裹多个 `type="table" value="1" base="xxxList"` |
 
-**明细表操作列**（参考 fam 模式）：
+**明细表操作列**：
 ```html
 <el-table-column label="操作" fixed="right" width="80px" align="center">
   <template slot-scope="{ $index }">

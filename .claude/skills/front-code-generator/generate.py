@@ -904,7 +904,7 @@ class CodeGenerator:
 
         # plugins（仅 import-list）
         if has_import:
-            lines.append(f'{B2}<template #plugins')
+            lines.append(f'{B2}<template #plugins>')
             lines.append(f'{B3}<import-list v-bind="importConfig" ref="importList" '
                          f'@importResult="importResult"></import-list>')
             lines.append(f'{B2}</template>')
