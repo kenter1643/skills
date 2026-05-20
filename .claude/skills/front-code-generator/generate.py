@@ -69,7 +69,27 @@ def parse_api_doc(md_path):
         'save_fields': {},            # 中文名 → API参数名 (保存入参)
         'info_list_fields': {},       # 子表明细字段
         'drawer_apis': [],            # 抽屉 API：{title, url, method, response_fields}
+        'api_paths': {},              # 接口文档中所有 API 路径 → {method, title}
     }
+
+    # 提取所有 API 路径（从 ```plaintext 代码块中解析 HTTP 方法 + URL，向上查找所属标题）
+    for m_block in re.finditer(r'```plaintext\s*\n(.*?)```', content, re.DOTALL):
+        block = m_block.group(1)
+        block_start = m_block.start()
+        # 向上查找最近的 ### 或 ## 标题
+        title = ''
+        before = content[:block_start]
+        for m_h in re.finditer(r'^#{2,4}\s+(.+)$', before, re.MULTILINE):
+            title = m_h.group(1).strip()
+        for m in re.finditer(
+            r'(GET|POST|PUT|DELETE)\s+(/\S+)',
+            block,
+            re.IGNORECASE
+        ):
+            url = m.group(2)
+            method = m.group(1).upper()
+            if url not in result['api_paths']:
+                result['api_paths'][url] = {'method': method, 'title': title}
 
     # 提取流程 Key → code, col（找不到时使用 config 默认值）
     m = re.search(r'流程Key[：:]\s*(\w+)', content)
@@ -204,26 +224,30 @@ def _parse_md_tables(content):
 
         # 检测表格头（以 | 开头，下一行是 |---| 分隔符）
         if line.startswith('|') and '---' not in line:
-            # 往前查找最近的标题（优先 H2/H3，再查 plain text）
+            # 往前查找最近的标题：H4 是子标题，H2/H3 是父标题（区域归属）
             title = ''
-            h2_title = ''
-            for j in range(i - 1, max(i - 20, -1), -1):
+            parent_title = ''
+            for j in range(i - 1, max(i - 200, -1), -1):
                 prev = lines[j].strip()
-                if prev.startswith('## '):
-                    if not h2_title:
-                        h2_title = prev.lstrip('#').strip()
-                elif prev.startswith('### ') or prev.startswith('#### '):
-                    title = prev.lstrip('#').strip()
+                if prev.startswith('## ') or prev.startswith('### '):
+                    if not title:
+                        title = prev.lstrip('#').strip()
+                    if not parent_title:
+                        parent_title = prev.lstrip('#').strip()
                     break
+                elif prev.startswith('#### '):
+                    if not title:
+                        title = prev.lstrip('#').strip()
+                    # 不 break，继续向上找 H2/H3 父标题
                 elif prev and not prev.startswith('|') and not prev.startswith('```'):
                     if not title:
                         title = prev
             # 如果没有子标题，用父标题作为上下文
             if not title:
-                title = h2_title
-            elif h2_title and '入参' not in title and '出参' not in title:
-                # 把父标题作为上下文前缀
-                title = h2_title + ' ' + title
+                title = parent_title
+            elif parent_title and ('入参' in title or '出参' in title):
+                # 把父标题作为上下文前缀，如 "单据列表 入参说明"
+                title = parent_title + ' ' + title
 
             rows = []
             # 解析表头
@@ -273,19 +297,29 @@ def build_field_mapping(json_data, api_data):
 
     # 汇总所有 API 参数（参数名 → 中文描述），排除模糊查询参数（firstXxx 是查询参数不是数据字段）
     all_params = {}
-    for src in ['list_advanced_params', 'list_response_fields',
-                'detail_response_fields', 'save_fields']:
+    for src in ['detail_response_fields', 'save_fields', 'list_response_fields',
+                'list_advanced_params']:
         for remark, param_name in api_data.get(src, {}).items():
             if param_name and not param_name.startswith('first'):
                 all_params[param_name] = remark
 
-    # 策略1：用字段名直接在 all_params 的备注中匹配
+    # 策略1a：精确匹配（字段名 == API备注）
     field_names = list(json_data.get('field_info', {}).keys())
     for fname in field_names:
         clean = fname.strip()
-        # 直接匹配
         for param_name, remark in all_params.items():
-            if clean == remark or clean in remark:
+            if clean == remark:
+                mapping[clean] = param_name
+                reverse[param_name] = clean
+                break
+
+    # 策略1b：子串匹配（字段名 in API备注），仅对未匹配字段
+    for fname in field_names:
+        clean = fname.strip()
+        if clean in mapping:
+            continue
+        for param_name, remark in all_params.items():
+            if clean in remark:
                 mapping[clean] = param_name
                 reverse[param_name] = clean
                 break
@@ -546,6 +580,14 @@ class CodeGenerator:
         self._detail_router_map = _load_detail_router(self._project_root)
 
     def generate_all(self):
+        # API 文件
+        api_dir = os.path.join(self._project_root, 'src', 'api', 'business', self.col)
+        os.makedirs(api_dir, exist_ok=True)
+        api_path = os.path.join(api_dir, f'bill{self.code}Page.js')
+        with open(api_path, 'w', encoding='utf-8') as f:
+            f.write(self._gen_api_js())
+        print(f"[生成] {api_path}")
+
         files = [
             ('index.vue', self._gen_index_vue),
             ('add.vue', self._gen_add_vue),
@@ -624,6 +666,8 @@ class CodeGenerator:
                 filter_attrs = f' filter filter-type="select" filter-prop="{fp}" filter-api="TODO:{fname}Enum"'
             elif is_drawer:
                 filter_attrs = ' filter'
+                if in_fuzzy:
+                    filter_attrs += ' filter-nimble'
             elif in_fuzzy:
                 filter_attrs = ' filter filter-nimble'
             elif in_advanced:
@@ -690,6 +734,7 @@ class CodeGenerator:
         lines.append('<script>')
         lines.append('import ColumnsTemplate from "@/views/common/agGrid/template/columnsV2"')
         lines.append('export default {')
+        lines.append(f'  name: "{self.col}Bill{self.code}Approval",')
         lines.append('  components: { ColumnsTemplate },')
         lines.append('}')
         lines.append('</script>')
@@ -700,18 +745,23 @@ class CodeGenerator:
 
     def _gen_add_vue(self):
         business_name = self.json.get('business_name', '单据')
-        details = self.json.get('input_style', {}).get('details', [])
+        detail_cfg = self.json.get('input_style', {}).get('details', {})
+        detail_title = detail_cfg.get('title', '明细') if isinstance(detail_cfg, dict) else '明细'
+        detail_fields = detail_cfg.get('fields', []) if isinstance(detail_cfg, dict) else detail_cfg
         drawers = self.json.get('input_style', {}).get('drawers', [])
 
-        # 从 details 中提取按钮型字段（排除"操作"）
+        # 从明细字段中提取按钮型字段（排除"操作"）
         detail_buttons = []
-        for fname in details:
+        for fname in detail_fields:
             info = get_field_info(self.json, fname)
             if info.get('field_type') == '按钮' and fname != '操作':
                 detail_buttons.append({'name': fname, 'info': info})
 
         # 导入按钮：detail_buttons 中含"导入"
         has_import = any('导入' in bf['name'] for bf in detail_buttons)
+        # 接口文档是否包含 download 端点
+        api_paths = self.api.get('api_paths', {})
+        has_download = any('download' in url for url in api_paths)
 
         # 从 data_check 中提取校验规则，生成 rules 数据和自定义 validator 方法
         field_rules = {}       # {prop: [rule_objs]}
@@ -725,8 +775,14 @@ class CodeGenerator:
         for fname, info in self.json.get('field_info', {}).items():
             if fname in builtin_fields:
                 continue
+            # 跳过按钮类字段（如"新增"、"导入"），它们不需要表单校验规则
+            if info.get('field_type') == '按钮':
+                continue
             rules, needs_validator = parse_data_check_rules(info)
             prop = self.mapping.get(fname, self._guess_prop(fname))
+            # 跳过中文 prop（映射失败回退），否则生成 check新增 之类的方法名
+            if re.search(r'[一-鿿]', prop):
+                continue
             if rules:
                 field_rules[prop] = rules
             if needs_validator:
@@ -771,7 +827,7 @@ class CodeGenerator:
         if needs_wrapper:
             lines.append(f'{W1}<div>')
 
-        lines.append(f'{B1}<zy-order-form :page-name="title" '
+        lines.append(f'{B1}<zy-order-form :page-name="title" ref="form" '
                      f':templates="[\'baseInfo\']" @beforeLayout="beforeLayout" :watch="watch">')
 
         # 主表分组（跳过组件内置的模板组）
@@ -804,8 +860,8 @@ class CodeGenerator:
             lines.append(f'{B2}</zy-order-form-group>')
 
         # 明细表
-        if details:
-            lines.append(f'{B2}<zy-order-form-group title="明细" type="table" base="infoList" :useAgGrid="true">')
+        if detail_fields:
+            lines.append(f'{B2}<zy-order-form-group title="{detail_title}" type="table" base="infoList" :useAgGrid="true">')
             lines.append(f'{B3}<template #header>')
 
             # 遍历 detail_buttons 渲染按钮
@@ -826,7 +882,8 @@ class CodeGenerator:
             lines.append(f'{B3}<template #append>')
 
             skip_detail_fields = SKIP_DETAIL_FIELDS
-            for fname in details:
+            has_operate = any('操作' in fname for fname in detail_fields)
+            for fname in detail_fields:
                 if fname in skip_detail_fields:
                     continue
                 info = get_field_info(self.json, fname)
@@ -838,15 +895,16 @@ class CodeGenerator:
                 col_attrs = self._build_detail_col_attrs(fname, info)
                 lines.append(f'{B4}<el-table-column label="{fname}" prop="{prop}"{col_attrs}></el-table-column>')
 
-            lines.append(f'{B4}<el-table-column label="操作" align="center" fixed="right" '
-                         f'width="100" type="operate" @removeRow="removeRow" '
-                         f':options="[\'delete\']"></el-table-column>')
+            if has_operate:
+                lines.append(f'{B4}<el-table-column label="操作" align="center" fixed="right" '
+                             f'width="100" type="operate" @removeRow="removeRow" '
+                             f':options="[\'delete\']"></el-table-column>')
             lines.append(f'{B3}</template>')
             lines.append(f'{B2}</zy-order-form-group>')
 
         # plugins（仅 import-list）
         if has_import:
-            lines.append(f'{B2}<template #plugins')
+            lines.append(f'{B2}<template #plugins>')
             lines.append(f'{B3}<import-list v-bind="importConfig" ref="importList" '
                          f'@importResult="importResult"></import-list>')
             lines.append(f'{B2}</template>')
@@ -877,6 +935,9 @@ class CodeGenerator:
                          f"'@/views/business/fm/bill1721Page/components/SelectDrawer.vue'")
         if has_import:
             lines.append(f"import ImportList from '@/views/components/common/importInfo/importList.vue'")
+        if has_import and has_download:
+            lines.append(f"import {{ downloadTemplate }} from "
+                         f"'@/api/business/{self.col}/bill{self.code}Page'")
         lines.append(f'import request from "@/utils/request"')
         lines.append(f'')
         lines.append(f'export default {{')
@@ -894,9 +955,15 @@ class CodeGenerator:
 
         # 枚举字段 Options
         for fname, info in self.json.get('field_info', {}).items():
+            if fname in builtin_fields:
+                continue
+            if info.get('field_type') == '按钮':
+                continue
             if info.get('is_enum'):
                 prop = self.mapping.get(fname, self._guess_prop(fname))
-                lines.append(f'      {prop}Options: [],')
+                # 跳过中文 prop
+                if not re.search(r'[一-鿿]', prop):
+                    lines.append(f'      {prop}Options: [],')
 
         if has_import:
             lines.append(f'      importConfig: {{}},')
@@ -951,9 +1018,15 @@ class CodeGenerator:
         lines.append(f'  }},')
         lines.append(f'  created() {{')
         for fname, info in self.json.get('field_info', {}).items():
+            if fname in builtin_fields:
+                continue
+            if info.get('field_type') == '按钮':
+                continue
             if info.get('is_enum'):
                 prop = self.mapping.get(fname, self._guess_prop(fname))
-                lines.append(f'    this.get{prop[0].upper() + prop[1:]}Options()')
+                # 跳过中文 prop（映射失败回退）
+                if not re.search(r'[一-鿿]', prop):
+                    lines.append(f'    this.get{prop[0].upper() + prop[1:]}Options()')
         if has_import:
             lines.append(f"    const path = window.location.pathname")
             lines.append(f"    const list = path.split('/')")
@@ -971,10 +1044,13 @@ class CodeGenerator:
                          f'"show-overflow-tooltip": false, visible: true, custom: true }}')
             lines.append(f'        ]')
             lines.append(f'      }},')
-            lines.append(f'      downloadTemplate: () => {{')
-            lines.append(f"        return request({{ url: `/{self.col}/bill/${{code}}/detail/import/template`, "
-                         f"method: 'GET' }})")
-            lines.append(f'      }}')
+            if has_download:
+                lines.append(f'      downloadTemplate: downloadTemplate,')
+            else:
+                lines.append(f'      downloadTemplate: () => {{')
+                lines.append(f"        return request({{ url: `/{self.col}/bill/${{code}}/detail/import/template`, "
+                             f"method: 'GET' }})")
+                lines.append(f'      }}')
             lines.append(f'    }}')
         lines.append(f'  }},')
         lines.append(f'  methods: {{')
@@ -1012,12 +1088,17 @@ class CodeGenerator:
             lines.append(f'      model.infoList = [...(model.infoList || []), ...selection]')
             lines.append(f'    }},')
         for fname, info in self.json.get('field_info', {}).items():
+            if fname in builtin_fields:
+                continue
+            if info.get('field_type') == '按钮':
+                continue
             if info.get('is_enum'):
                 prop = self.mapping.get(fname, self._guess_prop(fname))
-                method = f'get{prop[0].upper() + prop[1:]}Options'
-                lines.append(f'    {method}() {{')
-                lines.append(f'      // TODO: 替换为实际枚举接口')
-                lines.append(f'    }},')
+                if not re.search(r'[一-鿿]', prop):
+                    method = f'get{prop[0].upper() + prop[1:]}Options'
+                    lines.append(f'    {method}() {{')
+                    lines.append(f'      // TODO: 替换为实际枚举接口')
+                    lines.append(f'    }},')
         # data_check 自定义校验方法
         for cv in custom_validators:
             lines.append(f'    {cv["method_name"]}(rule, value, callback) {{')
@@ -1036,7 +1117,8 @@ class CodeGenerator:
     # ---- 审批详情页 ----
 
     def _gen_approval_index_vue(self):
-        details = self.json.get('input_style', {}).get('details', [])
+        detail_cfg = self.json.get('input_style', {}).get('details', {})
+        detail_fields = detail_cfg.get('fields', []) if isinstance(detail_cfg, dict) else detail_cfg
         lines = ['<script>',
                  "import base from '../index.vue'",
                  'export default {',
@@ -1046,7 +1128,7 @@ class CodeGenerator:
                  '      showPrint: true,',
                  '      renderMap: [']
 
-        if details:
+        if detail_fields:
             lines.append('        {')
             lines.append("          slot: 'subTable',")
             lines.append('          render: (h, ctx) => {')
@@ -1055,7 +1137,7 @@ class CodeGenerator:
             lines.append('              <div>')
             lines.append('                <div ref="columns">')
             skip_detail_fields = SKIP_DETAIL_FIELDS
-            for fname in details:
+            for fname in detail_fields:
                 if fname in skip_detail_fields:
                     continue
                 info = get_field_info(self.json, fname)
@@ -1116,8 +1198,8 @@ class CodeGenerator:
                 prop = self.mapping.get(fname, self._guess_prop(fname))
                 cell = {'label': fname, 'value': prop}
 
-                # 判断是否为可跳转字段
-                if info.get('display_type') == 'drawer':
+                # 判断是否为可跳转字段（仅「xxx编号」可点击跳转）
+                if '编号' in fname:
                     cell['type'] = 'router'
                     cell['idKey'] = self._guess_id_key(fname, prop)
                     cell['code'] = self._guess_nav_code(fname)
@@ -1157,29 +1239,89 @@ class CodeGenerator:
                     row = []
             if row:
                 if len(row) == 1:
-                    row[0]['colSpan'] = 12
+                    row[0]['colSpan'] = 24
                 rows.append(row)
 
             lines.append(f'  {{')
             lines.append(f'    title: "{title}",')
             lines.append(f'    tableData: [')
             for row in rows:
-                cells_str = ', '.join(self._format_cell(c) for c in row)
-                lines.append(f'      [ {cells_str} ],')
+                cells_str = ',\n        '.join(self._format_cell(c) for c in row)
+                lines.append(f'      [\n        {cells_str}\n     ],')
             lines.append(f'    ],')
             lines.append(f'  }},')
 
         # 明细子表
-        details = self.json.get('input_style', {}).get('details', [])
-        if details:
+        detail_cfg = self.json.get('input_style', {}).get('details', {})
+        detail_title = detail_cfg.get('title', '明细') if isinstance(detail_cfg, dict) else '明细'
+        detail_fields = detail_cfg.get('fields', []) if isinstance(detail_cfg, dict) else detail_cfg
+        if detail_fields:
             lines.append(f'  {{')
-            lines.append(f'    title: "明细",')
+            lines.append(f'    title: "{detail_title}",')
             lines.append(f"    customFloor: 'subTable',")
             lines.append(f"    base: 'infoList',")
             lines.append(f"    type: 'table',")
             lines.append(f'  }}')
 
         lines.append('];')
+        return '\n'.join(lines) + '\n'
+
+    # ---- API 文件 ----
+
+    def _gen_api_js(self):
+        """生成 src/api/business/{col}/bill{code}Page.js（遍历接口文档中所有 API 路径）"""
+        api_paths = self.api.get('api_paths', {})
+        lines = [
+            'import request from "@/utils/request";',
+            '',
+        ]
+
+        # JS 保留字映射
+        _reserved = {'delete': 'remove', 'export': 'exportData'}
+
+        # 标准单据操作端点（由框架处理，不生成 API 函数）
+        _skip_segments = {
+            'list', 'detail', 'save', 'delete', 'audit',
+            'revocation', 'deliver', 'export', 'checkparam',
+        }
+
+        if not api_paths:
+            lines.append('// TODO: 根据接口文档补充 API 函数')
+            lines.append('')
+        else:
+            generated = 0
+            for url, info in api_paths.items():
+                seg = url.rstrip('/').rsplit('/', 1)[-1]
+                # 跳过标准操作
+                if seg.lower() in _skip_segments:
+                    continue
+                generated += 1
+                method = info['method']
+                title = info.get('title', url)
+                # 驼峰分段
+                parts = re.split(r'(?=[A-Z])', seg)
+                func_name = parts[0].lower() + ''.join(p[0].upper() + p[1:].lower() for p in parts[1:]) if len(parts) > 1 else seg.lower()
+                # 处理 JS 保留字
+                func_name = _reserved.get(func_name, func_name)
+                # 含数字前缀补下划线
+                if func_name and func_name[0].isdigit():
+                    func_name = '_' + func_name
+
+                param_name = 'params' if method == 'GET' else 'data'
+                lines.append(f'// {title}')
+                lines.append(f'export function {func_name}({param_name}) {{')
+                lines.append(f'  return request({{')
+                lines.append(f"    url: '{url}',")
+                lines.append(f"    method: '{method.lower()}',")
+                lines.append(f'    {param_name}')
+                lines.append(f'  }});')
+                lines.append(f'}}')
+                lines.append('')
+
+            if generated == 0:
+                lines.append('// TODO: 根据接口文档补充 API 函数')
+                lines.append('')
+
         return '\n'.join(lines) + '\n'
 
     # ---- 辅助方法 ----
@@ -1263,11 +1405,47 @@ class CodeGenerator:
 
     def _guess_id_key(self, fname, prop):
         """根据字段名推断关联ID字段：contractCode → contractId"""
+        # 汇集所有已知 API prop（包括未映射的字段）
+        all_api_props = set()
+        for src in ['list_response_fields', 'detail_response_fields', 'save_fields',
+                     'list_advanced_params']:
+            for p in self.api.get(src, {}).values():
+                if p:
+                    all_api_props.add(p)
+
+        # 1. 精确规则
+        candidates = []
         if prop.endswith('Code'):
-            return prop[:-4] + 'Id'
+            candidates.append(prop[:-4] + 'Id')
         if prop.endswith('Number'):
-            return prop[:-6] + 'Id'
-        return prop + 'Id'
+            candidates.append(prop[:-6] + 'Id')
+        candidates.append(prop + 'Id')
+
+        for c in candidates:
+            if c in all_api_props:
+                return c
+
+        # 2. 模糊匹配：寻找共享词干的 Id 字段
+        #    例 paperContractNumber → contractId（共享 "contract"）
+        for api_prop in all_api_props:
+            if api_prop.endswith('Id') or api_prop.endswith('id'):
+                stem = api_prop[:-2]
+                if len(stem) >= 4 and stem.lower() in prop.lower():
+                    return api_prop
+
+        # 3. 中文字段名关键词 → API Id 字段匹配
+        #    例 项目编号 → projectId（"项目" 关联 "project"）
+        _id_stem_map = {
+            '项目': 'project',
+            '合同': 'contract',
+        }
+        for cn_kw, en_stem in _id_stem_map.items():
+            if cn_kw in fname:
+                for api_prop in all_api_props:
+                    if api_prop.lower().endswith('id') and en_stem in api_prop.lower():
+                        return api_prop
+
+        return candidates[-1]
 
     def _guess_nav_code(self, fname):
         """根据字段中文名在 detailRouter.js 中查找对应的跳转编码。
@@ -1383,7 +1561,7 @@ def main():
         print(f"[excel-parser] 开始解析 Excel: {args.excel}")
         # 添加 excel-parser 目录到 sys.path
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        excel_parser_dir = os.path.join(os.path.dirname(script_dir), 'excel-parser')
+        excel_parser_dir = os.path.join(script_dir, 'excel-parser')
         if excel_parser_dir not in sys.path:
             sys.path.insert(0, excel_parser_dir)
         from parse_excel import parse_excel as parse_excel_file
@@ -1444,12 +1622,7 @@ def main():
     gen = CodeGenerator(json_data, api_data, mapping, reverse, output_dir)
     gen.generate_all()
 
-    print("\n[完成] 代码生成完毕，请检查后手动调整以下内容：")
-    print("  1. 枚举下拉的 API 接口地址（搜索 TODO）")
-    print("  2. 计算逻辑（搜索 refresh）")
-    print("  3. 抽屉组件引用（如有需要）")
-    print("  4. 可跳转字段的 navCode")
-    print("  5. prop 映射的准确性")
+    print("\n[完成] 代码生成完毕!")
 
 
 if __name__ == '__main__':

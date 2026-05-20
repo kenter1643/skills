@@ -410,6 +410,7 @@ def build_input_style(fields, field_order):
 
     main_groups = []
     details = []
+    detail_title = '明细'
     drawers = []
     detail_seen = set()
 
@@ -435,6 +436,7 @@ def build_input_style(fields, field_order):
                 if f not in detail_seen:
                     detail_seen.add(f)
                     details.append(f)
+            detail_title = title
         elif title:
             main_groups.append({'title': title, 'fields': _sort_group_fields(title, group_fields)})
         else:
@@ -452,7 +454,7 @@ def build_input_style(fields, field_order):
 
     return {
         'main': main_groups,
-        'details': details,
+        'details': {'title': detail_title, 'fields': details},
         'drawers': drawers,
     }
 
@@ -489,7 +491,7 @@ def parse_excel(excel_path, business_name=None):
     detail_fields = []
     for g in input_style['main']:
         main_fields.extend(g['fields'])
-    detail_fields = list(input_style['details'])
+    detail_fields = list(input_style['details']['fields'])
 
     wb.close()
 
@@ -549,7 +551,7 @@ def main():
     print(f"[结果] 明细表字段: {len(data.get('detail_fields', []))} 个")
     main_fields_count = sum(len(g['fields']) for g in data['input_style']['main'])
     print(f"[结果] 主信息区: {main_fields_count} 个字段（{len(data['input_style']['main'])} 个分组）")
-    print(f"[结果] 明细区: {len(data['input_style']['details'])} 个字段")
+    print(f"[结果] 明细区: {len(data['input_style']['details']['fields'])} 个字段")
     print(f"[结果] 抽屉区域: {len(data['input_style'].get('drawers', []))} 个")
 
     # 创建输出目录
@@ -620,8 +622,8 @@ def main():
             f.write(f"  [{title}]\n")
             for name in group['fields']:
                 f.write(f"    {name}\n")
-        f.write(f"\n--- 明细区 ({len(data['input_style']['details'])} 个) ---\n")
-        for name in data['input_style']['details']:
+        f.write(f"\n--- {data['input_style']['details']['title']} ({len(data['input_style']['details']['fields'])} 个) ---\n")
+        for name in data['input_style']['details']['fields']:
             f.write(f"  {name}\n")
         for dr in data['input_style'].get('drawers', []):
             f.write(f"\n--- 抽屉: {dr['title']} ---\n")
