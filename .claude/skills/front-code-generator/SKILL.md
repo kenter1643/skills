@@ -99,6 +99,7 @@ python .claude/skills/front-code-generator/generate.py \
 |------|------|------|
 | 列表页 | `src/views/business/{{col}}/bill{{code}}Page/index.vue` | AG Grid 列表 |
 | 录入页 | `src/views/business/{{col}}/bill{{code}}Page/add.vue` | zy-order-form 表单（含逻辑） |
+| API 文件 | `src/api/business/{{col}}/bill{{code}}Page.js` | 接口函数（downloadTemplate 等） |
 | 审批页 | `src/views/approvalManagement/business/{{col}}Bill{{code}}Approval/index.vue` | 审批详情 |
 | 字段布局 | `src/views/approvalManagement/business/{{col}}Bill{{code}}Approval/js/list.js` | 详情页完整版字段配置 |
 | 字段布局 | `src/views/approvalManagement/business/{{col}}Bill{{code}}Approval/js/ellipsis.js` | 详情页简略版字段配置 |
@@ -106,6 +107,28 @@ python .claude/skills/front-code-generator/generate.py \
 ## 生成模板
 
 > 模板使用 `{{placeholder}}` 表示需要填充的变量。`{{#each}}` / `{{/each}}` 表示循环。`{{#if}}` / `{{/if}}` 表示条件。
+
+---
+
+### 模板零：API 文件 `src/api/business/{{col}}/bill{{code}}Page.js`
+
+> 遍历接口文档中所有 `METHOD /path` 格式的 API 路径，跳过标准单据操作（list/detail/save/delete/audit/revocation/deliver/export/checkParam），其余逐个生成请求函数。
+> JS 保留字自动映射：`delete` → `remove`、`export` → `exportData`。
+> GET 方法参数名为 `params`，POST 方法参数名为 `data`。
+> 无自定义端点时生成 TODO 占位。
+
+```javascript
+import request from "@/utils/request";
+
+// 下载导入模板（仅当接口文档包含 download 路径时生成）
+export function downloadTemplate(data) {
+  return request({
+    url: '/cm/bill/2804/download',
+    method: 'get',
+    data
+  });
+}
+```
 
 ---
 
@@ -226,6 +249,7 @@ export default {
 <script>
 import FormController from '@/components/Basic/orderForm/js/controller'
 import ImportList from '@/views/components/common/importInfo/importList.vue'
+import { downloadTemplate } from '@/api/business/{{col}}/bill{{code}}Page'
 import request from "@/utils/request"
 
 export default {
@@ -264,9 +288,7 @@ export default {
           { prop: "errorMsg", label: "失败原因", minWidth: "200", "show-overflow-tooltip": false, visible: true, custom: true }
         ]
       },
-      downloadTemplate: () => {
-        return request({ url: `/{{col}}/bill/${code}/detail/import/template`, method: 'GET' })
-      }
+      downloadTemplate: downloadTemplate,
     }
   },
   methods: {
