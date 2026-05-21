@@ -642,6 +642,8 @@ class CodeGenerator:
                 return prop + 'Str'
             if '日期' in ft or '时间' in fname:
                 return prop + 'Str'
+            if info.get('is_enum') or info.get('display_type') == 'select':
+                return prop + 'Str'
             return prop
 
         def _build_column(fname):
@@ -663,7 +665,7 @@ class CodeGenerator:
                 filter_attrs = f' filter filter-type="daterange" filter-format="yyyy-MM-dd" filter-prop="{fp}"'
             elif info.get('is_enum') or dt == 'select':
                 fp = _filter_prop(fname, prop, info) or prop
-                filter_attrs = f' filter filter-type="select" filter-prop="{fp}" filter-api="TODO:{fname}Enum"'
+                filter_attrs = f' filter filter-type="select" filter-prop="{fp}" filter-api="business/{self.col}/bill{self.code}Page:{fp}Label"'
             elif is_drawer:
                 filter_attrs = ' filter'
                 if in_fuzzy:
