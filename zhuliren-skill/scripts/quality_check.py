@@ -4,7 +4,7 @@
 对照通过标准表格逐项检查，输出通过/不通过和具体原因。
 
 用法:
-    python3 quality_check.py <SKILL.md路径>
+    python3 quality_check.py [--profile general|investment|auto] <SKILL.md路径>
 
 示例:
     python3 quality_check.py .claude/skills/elon-musk-perspective/SKILL.md
@@ -101,12 +101,110 @@ def check_primary_sources(content: str) -> tuple[bool, str]:
     return passed, f"一手来源占比: {primary}/{total} ({ratio:.0%}) {'✅' if passed else '❌ (应>50%)'}"
 
 
+def section_present(content: str, patterns: list[str]) -> bool:
+    return any(re.search(pattern, content, re.IGNORECASE) for pattern in patterns)
+
+
+def count_evidence_labels(content: str) -> int:
+    return len(re.findall(r'\[(?:P1|P2|S1|S2|I|U)\]', content))
+
+
+def count_invalidation_items(content: str) -> int:
+    matches = re.findall(r'失效条件|证伪条件|假设失效', content)
+    list_items = 0
+    for match in re.finditer(r'(?:##|###)\s+.*(?:失效|证伪)(.*?)(?=\n##|\Z)', content, re.DOTALL):
+        list_items += len(re.findall(r'^[-*\d]+[.)、]?\s+', match.group(1), re.MULTILINE))
+    return max(len(matches), list_items)
+
+
+def count_case_sections(content: str) -> int:
+    return len(re.findall(r'^#{2,4}\s+.*案例', content, re.MULTILINE))
+
+
+def count_failure_cases(content: str) -> int:
+    explicit = re.findall(
+        r'^#{2,4}\s+失败案例\s*[一二三四五六七八九十\d]+',
+        content,
+        re.MULTILINE,
+    )
+    section = re.search(
+        r'^##\s+.*(?:失败|争议)(.*?)(?=^##\s+|\Z)',
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not section:
+        return 0
+    headings = re.findall(r'^#{3,4}\s+', section.group(1), re.MULTILINE)
+    list_items = re.findall(r'^[-*]\s+', section.group(1), re.MULTILINE)
+    return max(len(explicit), len(headings), len(list_items))
+
+
+def count_research_sources(skill_path: Path, content: str) -> int:
+    corpus = content
+    research_dir = skill_path.parent / "references" / "research"
+    if research_dir.exists():
+        corpus += "\n" + "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(research_dir.glob("*.md"))
+        )
+    urls = re.findall(r'https?://[^\s)>]+', corpus)
+    return len(set(urls))
+
+
+def investment_checks(content: str, skill_path: Path) -> list[tuple[str, bool, str]]:
+    checks = []
+    required_sections = {
+        "投资身份卡": [r'投资身份卡', r'主要市场与资产'],
+        "研究操作系统": [r'研究操作系统', r'研究流程'],
+        "估值与预期": [r'估值与市场预期', r'估值锚'],
+        "组合与仓位": [r'组合与仓位', r'初始仓位', r'最大仓位'],
+        "买卖与退出": [r'买卖与退出', r'退出纪律'],
+        "市场环境适配": [r'市场环境适配', r'适用环境'],
+        "失败与争议": [r'失败.*争议', r'失败案例', r'争议案例'],
+        "标准回答协议": [r'标准回答协议'],
+    }
+    for name, patterns in required_sections.items():
+        passed = section_present(content, patterns)
+        checks.append((name, passed, "存在" if passed else "缺失"))
+
+    evidence_count = count_evidence_labels(content)
+    checks.append(("证据标签", evidence_count >= 5, f"{evidence_count}处（应≥5）"))
+
+    invalidation_count = count_invalidation_items(content)
+    checks.append(("证伪条件", invalidation_count >= 3, f"{invalidation_count}处（应≥3）"))
+
+    case_count = count_case_sections(content)
+    checks.append(("案例复原", case_count >= 3, f"{case_count}个（应≥3）"))
+
+    failure_count = count_failure_cases(content)
+    checks.append(("失败案例", failure_count >= 2, f"{failure_count}个（应≥2）"))
+
+    source_count = count_research_sources(skill_path, content)
+    checks.append(("独立来源", source_count >= 15, f"{source_count}个（应≥15）"))
+
+    has_cutoff = bool(re.search(r'调研截止时间|research-cutoff', content))
+    checks.append(("研究截止日期", has_cutoff, "存在" if has_cutoff else "缺失"))
+
+    boundary = bool(re.search(
+        r'本人.*(?:表达|观点)|框架推演|可核验行为|不冒充本人',
+        content,
+        re.IGNORECASE,
+    ))
+    checks.append(("推演边界", boundary, "已区分" if boundary else "未明确区分"))
+    return checks
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("用法: python3 quality_check.py <SKILL.md路径>")
+    args = sys.argv[1:]
+    profile = "auto"
+    if len(args) >= 2 and args[0] == "--profile":
+        profile = args[1]
+        args = args[2:]
+    if len(args) != 1 or profile not in {"auto", "general", "investment"}:
+        print("用法: python3 quality_check.py [--profile general|investment|auto] <SKILL.md路径>")
         sys.exit(1)
 
-    skill_path = Path(sys.argv[1])
+    skill_path = Path(args[0])
     if not skill_path.exists():
         print(f"❌ 文件不存在: {skill_path}")
         sys.exit(1)
@@ -122,7 +220,12 @@ def main():
         ("一手来源占比", check_primary_sources),
     ]
 
-    print(f"质量检查: {skill_path.name}")
+    if profile == "auto":
+        profile = "investment" if re.search(
+            r'profile:\s*investor-v2|投资人 V2|投资操作系统', content, re.IGNORECASE
+        ) else "general"
+
+    print(f"质量检查: {skill_path.name}（{profile}）")
     print("=" * 50)
 
     passed_count = 0
@@ -135,8 +238,22 @@ def main():
         if passed:
             passed_count += 1
 
+    if profile == "investment":
+        extra_checks = investment_checks(content, skill_path)
+        total += len(extra_checks)
+        for name, passed, detail in extra_checks:
+            status = "✅ PASS" if passed else "❌ FAIL"
+            print(f"  {name:<12} {status}  {detail}")
+            if passed:
+                passed_count += 1
+
     print("=" * 50)
     print(f"结果: {passed_count}/{total} 通过")
+
+    if profile == "investment":
+        ratio = passed_count / total
+        grade = "A 可实战调用" if ratio == 1 else "B 研究视角" if ratio >= 0.7 else "C 人物理解"
+        print(f"投资证据等级: {grade}")
 
     if passed_count == total:
         print("🎉 全部通过，可以交付")

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-合并6个Agent的调研结果，生成Phase 1.5调研Review检查点的摘要表格。
-扫描 references/research/ 目录下的01-06 md文件，统计每个维度的来源数量、
-一手/二手占比、关键发现。
+合并通用人物6维或投资人V2十维调研结果，生成Phase 1.5摘要表格。
 
 用法:
     python3 merge_research.py <skill目录路径>
@@ -17,13 +15,32 @@ import sys
 import re
 from pathlib import Path
 
-AGENTS = {
+GENERAL_AGENTS = {
     '01-writings': '著作',
     '02-conversations': '对话',
     '03-expression-dna': '表达',
     '04-external-views': '他者',
     '05-decisions': '决策',
     '06-timeline': '时间线',
+}
+
+INVESTOR_AGENTS = {
+    '01-primary-sources': '一手来源',
+    '02-investment-philosophy': '投资哲学',
+    '03-research-system': '研究系统',
+    '04-valuation-and-expectations': '估值预期',
+    '05-portfolio-and-positioning': '组合仓位',
+    '06-trading-and-exit': '交易退出',
+    '07-cases-and-decisions': '案例决策',
+    '08-failures-and-contradictions': '失败争议',
+    '09-expression-dna': '表达DNA',
+    '10-timeline-and-regimes': '时间环境',
+}
+
+MIGRATED_INVESTOR_AGENTS = {
+    **GENERAL_AGENTS,
+    '07-v2-evidence-ledger': 'V2证据账本',
+    '08-v2-portfolio-and-cases': 'V2仓位案例',
 }
 
 
@@ -61,14 +78,14 @@ def extract_key_findings(content: str, max_items: int = 3) -> list[str]:
     return [l[:50] + '...' if len(l) > 50 else l for l in lines[:max_items]]
 
 
-def find_contradictions(files: dict[str, str]) -> list[str]:
+def find_contradictions(files: dict[str, str], agents: dict[str, str]) -> list[str]:
     """简单检测跨文件矛盾（同一关键词出现不同判断）"""
     contradictions = []
     # 检测「但是」「然而」「相反」「矛盾」等矛盾标记
     for name, content in files.items():
         matches = re.findall(r'(?:矛盾|相反|但实际上|然而.*?不同|争议).{0,100}', content)
         for m in matches:
-            contradictions.append(f"{AGENTS.get(name, name)}: {m[:80]}")
+            contradictions.append(f"{agents.get(name, name)}: {m[:80]}")
     return contradictions[:5]  # 最多5条
 
 
@@ -91,7 +108,23 @@ def main():
     total_secondary = 0
     missing = []
 
-    for key, label in AGENTS.items():
+    skill_file = skill_dir / "SKILL.md"
+    skill_content = skill_file.read_text(encoding="utf-8") if skill_file.exists() else ""
+    investor_mode = any((research_dir / f"{key}.md").exists() for key in INVESTOR_AGENTS)
+    migrated_mode = bool(re.search(r'profile:\s*investor-v2', skill_content, re.IGNORECASE))
+    if investor_mode:
+        agents = INVESTOR_AGENTS
+        mode_label = "投资人 V2"
+    elif migrated_mode:
+        agents = MIGRATED_INVESTOR_AGENTS
+        mode_label = "投资人 V2 兼容迁移"
+    else:
+        agents = GENERAL_AGENTS
+        mode_label = "通用人物"
+
+    print(f"研究模式: {mode_label}")
+
+    for key, label in agents.items():
         md_file = research_dir / f"{key}.md"
         if not md_file.exists():
             missing.append(label)
@@ -114,7 +147,7 @@ def main():
         rows.append(f"│ {label:<12} │ {stats['unique_urls']:<8} │ {findings_str:<24} │")
 
     # 矛盾检测
-    contradictions = find_contradictions(files)
+    contradictions = find_contradictions(files, agents)
 
     # 输出
     print("┌──────────────┬──────────┬──────────────────────────┐")
@@ -142,6 +175,8 @@ def main():
     # 总结
     if total_sources < 10:
         print("\n⚠️ 总来源数 <10，建议降低期望或补充调研")
+    if (investor_mode or migrated_mode) and total_sources < 15:
+        print("\n⚠️ 投资人 V2 建议至少15个独立来源")
     if missing:
         print(f"\n⚠️ 缺失维度: {', '.join(missing)}，建议补充或在诚实边界中标注")
 
