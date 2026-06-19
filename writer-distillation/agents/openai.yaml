@@ -1,0 +1,4 @@
+interface:
+  display_name: "作家蒸馏"
+  short_description: "蒸馏作家的叙事、语言、修订与创作方法"
+  default_prompt: "Use $writer-distillation to distill a writer's literary craft into a runnable writing mentor skill."
