@@ -14,6 +14,7 @@ Marvis 助手技能集合。
 | [缠中说禅](chzhshch-perspective/) | 《教你炒股票》108课的走势结构、完全分类与操作框架 | V2-B |
 | [段永平](duan-yongping-perspective/) | 经营、投资与人生决策框架，强调本分、能力圈和长期主义 | 1.0 |
 | [徐翔](xu-xiang-perspective/) | 投资人 V2 兼容迁移样例，基于可核验公开行为提炼的合法短线交易框架 | V2-B |
+| [review-paper-blueprint](review-paper-blueprint/) | 综述论文写作蓝本：按导师审核通过的综述骨架与 Chem. Soc. Rev. 高质量综述写法规划、撰写、改写和检查英文综述，含英文行文规则与终检清单 | 1.0 |
 | [limit-up-1to2-prediction](limit-up-1to2-prediction/) | A股短线首板晋级二板预测，整合宏观情绪+板块拥挤度+主线过热+基本面过滤+技术面评分 | v3.4 |
 | [api-doc-generator](api-doc-generator/) | API 文档生成器 | - |
 | [generator-code-completer](generator-code-completer/) | 代码补全生成器 | - |
@@ -42,6 +43,8 @@ skills/
 ├── lin-guangmao-perspective/       # 林广茂商品趋势与交割
 ├── duan-yongping-perspective/      # 段永平经营与投资框架
 ├── xu-xiang-perspective/           # 徐翔公开行为交易框架
+├── review-paper-blueprint/         # 综述论文写作蓝本
+│   └── SKILL.md                    # 技能定义
 ├── limit-up-1to2-prediction/       # 涨停二板预测 v3.4
 │   ├── SKILL.md                    # 技能定义
 │   ├── meta.json                   # 元数据
