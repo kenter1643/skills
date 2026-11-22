@@ -45,6 +45,7 @@ skills/
 ├── duan-yongping-perspective/      # 段永平经营与投资框架
 ├── xu-xiang-perspective/           # 徐翔公开行为交易框架
 ├── review-paper-blueprint/         # 综述论文写作蓝本
+│   └── SKILL.md                    # 技能定义
 ├── paper-abstract-writer/          # 论文摘要写作（学术张力）
 │   └── SKILL.md                    # 技能定义
 ├── limit-up-1to2-prediction/       # 涨停二板预测 v3.4
