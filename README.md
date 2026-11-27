@@ -20,6 +20,7 @@ Marvis 助手技能集合。
 | [api-doc-generator](api-doc-generator/) | API 文档生成器 | - |
 | [generator-code-completer](generator-code-completer/) | 代码补全生成器 | - |
 | [javaDevelop](javaDevelop/) | Java 开发辅助 | - |
+| [x-viral-writer](x-viral-writer/) | 中文 X 爆款文案：科技爆料、吐槽、短帖、反讽与事实核验规则 | 1.0.0 |
 | [social-media](social-media/) | 社交媒体辅助 | - |
 | [finance](finance/) | 金融相关 | - |
 | [social](social/) | 社交相关 | - |
@@ -58,6 +59,8 @@ skills/
 ├── api-doc-generator/
 ├── generator-code-completer/
 ├── javaDevelop/
+├── x-viral-writer/                # 中文 X 爆款文案
+│   └── SKILL.md
 ├── social-media/
 ├── finance/
 └── social/
